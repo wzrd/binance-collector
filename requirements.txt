@@ -1,0 +1,6 @@
+ccxt
+python-telegram-handler
+arrow
+numpy
+pandas
+requests
