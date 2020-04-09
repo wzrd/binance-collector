@@ -4,3 +4,5 @@ arrow
 numpy
 pandas
 requests
+sqlalchemy
+mysqlclient

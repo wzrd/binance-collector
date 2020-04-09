@@ -5,12 +5,16 @@ from sqlalchemy import create_engine, inspect, desc, asc
 from sqlalchemy.sql import select, and_, or_, not_
 
 import logging
+import datetime
 
 import pandas as pd
+
+import sshtunnel
 
 import config as cfg
 
 logger = logging.getLogger()
+
 
 def market_name_to_db_name(market_name):
     market_list = market_name.split('/')
@@ -18,6 +22,7 @@ def market_name_to_db_name(market_name):
     market_db_name = market_list[1] + '_' + market_list[0]
 
     return market_db_name
+
 
 def create_market_table_mapping(market_name):
     '''
@@ -38,6 +43,7 @@ def create_market_table_mapping(market_name):
                  schema='binance_data',
                  keep_existing=True
                  )
+
 
 def write_market_data(market_df, market_name):
     '''
@@ -64,6 +70,49 @@ def write_market_data(market_df, market_name):
     metadata.remove(market_table)
     return return_state
 
+
+def get_last_row_timestamp(pair: str):
+    market_table = create_market_table_mapping(pair)
+    market_table.create(checkfirst=True)
+
+    #sel = market_table.select(market_table.c.date).order_by(market_table.c.date.desc()).limit(1)
+    sel = market_table.select(market_table.c.date).order_by(market_table.c.date.desc()).limit(1)
+    result = execute_query(sel)
+    return result.fetchone()
+
+# //////////////
+# BASE FUNCTIONS
+# //////////////
+
+
+def bind_to_remote_host():
+    global tunnel
+    global engine
+    global metadata
+
+    tunnel = sshtunnel.SSHTunnelForwarder((cfg.REMOTE_IP),
+                                          ssh_username=cfg.REMOTE_SSH_USER,
+                                          ssh_pkey='~/.ssh/id_rsa',
+                                          remote_bind_address=('127.0.0.1', 3306))
+
+    tunnel.start()
+
+    db_path = 'mysql://{0}:{1}@{2}:{3}/{4}{5}'.format(cfg.REMOTE_USER, cfg.REMOTE_PASSWORD, '127.0.0.1', tunnel.local_bind_port, '', cfg.REMOTE_SOCKET)
+
+    engine = create_engine(db_path, pool_recycle=3600)
+
+
+def unbind_from_remote_host():
+    global tunnel
+    global engine
+    global metadata
+
+    tunnel.close()
+
+    engine = create_db_engine()
+    metadata.bind = engine
+
+
 def create_db_engine(db_name=''):
     '''
     Creating connection to database for next manipulations
@@ -82,9 +131,13 @@ def execute_query(query):
 
     return result
 
+
 engine = create_db_engine()
 
 
 # Define metadata
 metadata = MetaData()
 metadata.bind = engine
+
+# Global variable for tunnel
+tunnel = None
